@@ -86,8 +86,8 @@ Para mitigar la falla a corto plazo y estabilizar el servicio, subiría temporal
 
 ### 11. ¿Qué métrica y alerta usarías para detectar degradación silenciosa de un worker de colas?
 
-      - Métrica: Utilizaría "Age of Oldest Message" (Tiempo del mensaje más antiguo sin procesar) y "Queue Depth" (Cantidad de items pendientes acumulados).
-      - Alerta: Configurar un Threshold en donde si el tiempo del mensaje más antiguo tiene más de X minutos sin ser sacado de la cola, dispararía la alerta severa. No usaría uso de CPU del worker, ya que en un error donde el worker hace un "deadlock", la CPU se iría a ~0 pero dejaría procesar.
+- Métrica: Utilizaría "Age of Oldest Message" (Tiempo del mensaje más antiguo sin procesar) y "Queue Depth" (Cantidad de items pendientes acumulados).
+- Alerta: Configurar un Threshold en donde si el tiempo del mensaje más antiguo tiene más de X minutos sin ser sacado de la cola, dispararía la alerta severa. No usaría uso de CPU del worker, ya que en un error donde el worker hace un "deadlock", la CPU se iría a ~0 pero dejaría procesar.
 
 
 ### 12. ¿Cómo correlacionas un incidente entre logs, trazas y métricas sin depender de una sola herramienta?
