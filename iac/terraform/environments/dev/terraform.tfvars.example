@@ -1,0 +1,6 @@
+aws_region   = "us-east-1"
+project      = "novaledger"
+environment  = "dev"
+vpc_cidr     = "10.40.0.0/16"
+db_username  = "admin"
+db_password  = "replace-me"

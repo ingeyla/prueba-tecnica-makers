@@ -1,0 +1,90 @@
+server:
+  global:
+    scrape_interval: 15s
+    evaluation_interval: 15s
+  retention: 15d
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+alertmanager:
+  enabled: true
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: 'default'
+    receivers:
+      - name: 'default'
+        webhook_configs: []
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true
+
+serverFiles:
+  alerting_rules.yml:
+    groups:
+      - name: novaledger.rules
+        rules:
+          - alert: HighErrorRate
+            expr: |
+              sum(rate(http_requests_total{namespace="novaledger",app="payments-api",code=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{namespace="novaledger",app="payments-api"}[5m]))
+              > 0.01
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "payments-api error rate > 1%"
+              runbook: "https://wiki.novaledger.local/runbooks/high-error-rate"
+
+          - alert: HighLatencyP95
+            expr: |
+              histogram_quantile(0.95,
+                sum(rate(http_request_duration_seconds_bucket{namespace="novaledger",app="payments-api"}[5m])) by (le)
+              ) > 0.3
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "payments-api p95 latency > 300ms (SLO breach)"
+
+          - alert: PodCrashLooping
+            expr: rate(kube_pod_container_status_restarts_total{namespace="novaledger"}[15m]) > 0
+            for: 10m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Pod {{ $labels.pod }} is crash looping"
+
+          - alert: WorkerQueueBacklog
+            expr: sum(rabbitmq_queue_messages{queue="risk-scoring"}) > 1000
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "risk-worker queue backlog > 1000 messages"
+
+          - alert: HighMemoryUsage
+            expr: |
+              container_memory_working_set_bytes{namespace="novaledger"}
+              /
+              container_spec_memory_limit_bytes{namespace="novaledger"}
+              > 0.85
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Container {{ $labels.container }} memory usage > 85% of limit"

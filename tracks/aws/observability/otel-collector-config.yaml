@@ -1,0 +1,90 @@
+# OpenTelemetry Collector Configuration — Track AWS
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Receptor de métricas de Prometheus (scrape de apps)
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'novaledger-apps'
+          kubernetes_sd_configs:
+            - role: pod
+              namespaces:
+                names:
+                  - novaledger
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              action: keep
+              regex: "true"
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+  # Agregar metadata de K8s a las trazas/métricas
+  k8sattributes:
+    extract:
+      metadata:
+        - k8s.pod.name
+        - k8s.namespace.name
+        - k8s.deployment.name
+
+  # Filtrar atributos sensibles (PCI-DSS)
+  attributes/remove-sensitive:
+    actions:
+      - key: db.statement
+        action: delete
+      - key: http.request.body
+        action: delete
+
+  memory_limiter:
+    limit_mib: 512
+    check_interval: 5s
+
+exporters:
+  # Logging (para debug, reducir verbosity en producción)
+  logging:
+    verbosity: normal
+
+
+  # Traces → Tempo
+  otlp/tempo:
+    endpoint: tempo.monitoring.svc.cluster.local:4317
+    tls:
+      insecure: false
+
+      # Descomentar cuando se configure mTLS:
+      # cert_file: /etc/otel/tls/cert.pem
+      # key_file: /etc/otel/tls/key.pem
+
+  # Métricas → Prometheus
+  prometheusremotewrite:
+    endpoint: http://prometheus-server.monitoring.svc.cluster.local/api/v1/write
+
+  # Logs → Loki
+  loki:
+    endpoint: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+
+service:
+  pipelines:
+    # Pipeline de traces
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, k8sattributes, attributes/remove-sensitive, batch]
+      exporters: [otlp/tempo]
+
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, k8sattributes, batch]
+      exporters: [prometheusremotewrite]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, k8sattributes, attributes/remove-sensitive, batch]
+      exporters: [loki]

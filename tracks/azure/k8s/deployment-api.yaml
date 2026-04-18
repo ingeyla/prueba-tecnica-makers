@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-api
+  namespace: novaledger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payments-api
+  template:
+    metadata:
+      labels:
+        app: payments-api
+    spec:
+      containers:
+        - name: api
+          image: novaledger.azurecr.io/payments-api:latest
+          env:
+            - name: DB_PASSWORD
+              value: "plaintext"
+          ports:
+            - containerPort: 8080

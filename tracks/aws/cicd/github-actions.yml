@@ -1,0 +1,107 @@
+# CI/CD Pipeline — AWS Track (GitHub Actions)
+name: aws-track
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER: novaledger-dev-eks
+  IMAGE_REGISTRY: ghcr.io/example
+
+jobs:
+  # -------------------------------------------------------
+  # Stage 1: Continuous Integration (Lint & Plan)
+  # -------------------------------------------------------
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive tracks/aws/iac/terraform/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform validation and plan
+        run: |
+          cd tracks/aws/iac/terraform
+          terraform init
+          terraform validate
+          terraform plan -no-color
+
+  # -------------------------------------------------------
+  # Stage 2: Build & Push de imagen (Solo en main)
+  # -------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: meta
+        run: echo "tags=${{ env.IMAGE_REGISTRY }}/payments-api:${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Docker image
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker build -t ${{ steps.meta.outputs.tags }} .
+          docker push ${{ steps.meta.outputs.tags }}
+
+  # -------------------------------------------------------
+  # Stage 3: Deployment (Solo en main)
+  # -------------------------------------------------------
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Preflight checks
+        run: make -C tracks/aws/automation preflight
+
+      - name: Terraform Apply
+        run: |
+          cd tracks/aws/iac/terraform
+          terraform init
+          terraform plan -out=tfplan
+          terraform apply tfplan
+
+      - name: Deploy to Kubernetes
+        run: |
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+          kubectl apply -k k8s/base/
+          kubectl -n novaledger set image deployment/payments-api api=${{ needs.build.outputs.image_tag }}
+          kubectl -n novaledger rollout status deployment/payments-api --timeout=300s
+
+      - name: SLO validation post-deploy
+        run: make -C tracks/aws/automation slo-check
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          kubectl -n novaledger rollout undo deployment/payments-api
+          kubectl -n novaledger rollout status deployment/payments-api --timeout=300s

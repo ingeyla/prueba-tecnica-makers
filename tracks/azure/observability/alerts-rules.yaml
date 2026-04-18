@@ -1,0 +1,5 @@
+alerts:
+  - name: Api5xxHigh
+    query: sum(rate(http_requests_total{status=~"5.."}[1m])) > 1
+    for: 30s
+    severity: warning

@@ -1,0 +1,6 @@
+name: novaledger-foundation
+description: Base infra for fintech startup
+runtime:
+  name: nodejs
+  options:
+    typescript: true

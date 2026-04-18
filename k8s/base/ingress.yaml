@@ -1,0 +1,23 @@
+# Ingress: payments-api
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: payments-api
+spec:
+  ingressClassName: nginx
+
+  tls:
+    - hosts:
+        - api.novaledger.local
+      secretName: payments-api-tls
+  rules:
+    - host: api.novaledger.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: payments-api
+                port:
+                  number: 80

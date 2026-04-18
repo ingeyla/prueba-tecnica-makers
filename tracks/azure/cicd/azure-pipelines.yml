@@ -1,0 +1,20 @@
+trigger:
+  branches:
+    include:
+      - '*'
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+
+  - script: |
+      cd tracks/azure/iac/terraform
+      terraform init
+      terraform apply -auto-approve
+    displayName: Terraform Apply
+
+  - script: |
+      kubectl apply -f tracks/azure/k8s/deployment-api.yaml
+    displayName: Deploy to AKS
